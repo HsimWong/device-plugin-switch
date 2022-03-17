@@ -2,7 +2,6 @@ package deviceplugin
 
 import (
 	"context"
-	"github.com/HsimWong/device-plugin-switch/deviceinstance"
 	"github.com/HsimWong/device-plugin-switch/utils"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
@@ -21,12 +20,11 @@ type Instance struct {
 	ctx              context.Context
 	cancel           context.CancelFunc
 	msgRcv           *utils.SyncMessenger
-	devices          *deviceinstance.DeviceCategory
 	devSocket        string
 }
 
 func NewDevicePluginInstance(deviceType string, deviceCategoryID string,
-	msgRcv *utils.SyncMessenger, deviceCategory *deviceinstance.DeviceCategory) *Instance {
+	msgRcv *utils.SyncMessenger) *Instance {
 	return &Instance{
 		deviceType:       deviceType,
 		deviceCategoryID: deviceCategoryID,
@@ -35,7 +33,6 @@ func NewDevicePluginInstance(deviceType string, deviceCategoryID string,
 		ctx:              nil,
 		cancel:           nil,
 		msgRcv:           msgRcv,
-		devices:          deviceCategory,
 		devSocket:        path.Join(utils.DevicePluginDir, deviceType+".sock"),
 	}
 }
@@ -58,7 +55,7 @@ func (d *Instance) Run() {
 	go func() {
 		err = d.srv.Serve(lis)
 		utils.Check(err, "Error occurs when serving device plugin")
-		log.Debugf("Error device plugin: %s", d.deviceType)
+		//log.Debugf("Error device plugin: %s", d.deviceType)
 	}()
 	//time.Sleep(5 * time.Second)
 	//conn, err := utils.Dial(dp.devSocketPath, 5 * time.Second)
@@ -71,7 +68,7 @@ func (d *Instance) Run() {
 	utils.Check(err, "Error when register to kubelet")
 
 	dpClient := plugin.NewRegistrationClient(conn)
-	log.Debugf("Endpoint: %s, ResourceName:%s, deviceType:%s", d.devSocket, d.deviceType, d.deviceType)
+	//log.Debugf("Endpoint: %s, ResourceName:%s, deviceType:%s", d.devSocket, d.deviceType, d.deviceType)
 
 	req := &plugin.RegisterRequest{
 		Version:      plugin.Version,
@@ -80,7 +77,12 @@ func (d *Instance) Run() {
 	}
 	_, err = dpClient.Register(context.Background(), req)
 	utils.Check(err, "Registering device plugin failed")
-	log.Info("Register Finished")
+	if err == nil {
+		router := utils.GetMessageRouter()
+		//log.Debugf("Calling device to invoke monitor")
+		router.Call("device", d.deviceCategoryID, "invokeMonitor")
+	}
+	//log.Info("Register Finished")
 }
 
 func (d *Instance) GetDevicePluginOptions(ctx context.Context, empty *plugin.Empty) (*plugin.DevicePluginOptions, error) {
@@ -93,21 +95,28 @@ func (d *Instance) ListAndWatch(empty *plugin.Empty,
 	// This function runs in separate thread
 	log.Info("ListAndWatch called by kubelet")
 	// Initial Reporting to kubelet
-	router := utils.GetMessageRouter()
-	allDevices := router.Call("device",
-		d.deviceCategoryID, "getAllDevices").([]*plugin.Device)
-	err := server.Send(&plugin.ListAndWatchResponse{
-		Devices: allDevices,
-	})
-	utils.Check(err, "Reporting List&Watch failed")
-
+	//router := utils.GetMessageRouter()
+	//log.Debugf("Trying to get all devices first")
+	//allDevices := router.Call("device",
+	//	d.deviceCategoryID, "getAllDevices").([]*plugin.Device)
+	//log.Debugf("Received device info for the 1st time.....:%s", allDevices)
+	//log.Debugf("Trying to send list&Watch response")
+	//err := server.Send(&plugin.ListAndWatchResponse{
+	//	Devices: allDevices,
+	//})
+	//
+	//utils.Check(err, "Reporting List&Watch failed")
+	//log.Debugf("Reporting list and watch success")
 	// drop in loop, reporting to kubelet continuously
 	for {
 		deviceDeltas := d.msgRcv.Serve().([]*plugin.Device)
+		log.Debugf("Delta detected: ")
+		d.msgRcv.Respond("Finished")
 		err := server.Send(&plugin.ListAndWatchResponse{
 			Devices: deviceDeltas,
 		})
 		utils.Check(err, "Reporting List&Watch device deltas failed")
+		log.Debugf("List&Watch reporting finished")
 	}
 
 	return nil

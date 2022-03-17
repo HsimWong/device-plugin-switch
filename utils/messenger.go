@@ -12,8 +12,8 @@ type SyncMessenger struct {
 
 func NewSyncMessenger() *SyncMessenger {
 	return &SyncMessenger{
-		Requester: make(chan interface{}),
-		Responder: make(chan interface{}),
+		Requester: make(chan interface{}, 0x1),
+		Responder: make(chan interface{}, 0x1),
 	}
 }
 
@@ -37,25 +37,36 @@ type MessageRouter struct {
 	messageReceivers map[string]*SyncMessenger
 }
 
-func (m *MessageRouter) run() {
-
-}
+//
+//func (m *MessageRouter) run() {
+//
+//}
 
 func GetMessageRouter() *MessageRouter {
 	once.Do(func() {
 		messageReceivers := make(map[string]*SyncMessenger)
 		MsgRouter = &MessageRouter{messageReceivers: messageReceivers}
-		go MsgRouter.run()
+		//go MsgRouter.run()
 	})
 	return MsgRouter
 }
 
-func (m *MessageRouter) NewClient(pathID string, msgSvr *SyncMessenger) {
-	m.messageReceivers[pathID] = msgSvr
+func (m *MessageRouter) NewClient(target string, deviceID string,
+	msgSvr *SyncMessenger) {
+	m.messageReceivers[target+deviceID] = msgSvr
 }
 
 func (m *MessageRouter) Call(target string, deviceID string,
 	content interface{}) interface{} {
-	log.Debugf("Target: %s, cateID:%s", target, deviceID)
-	return m.messageReceivers[target+deviceID].Request(content)
+	//log.Debugf("calling Target: %s, cateID:%s", target, deviceID)
+	if messenger, exist := m.messageReceivers[target+deviceID]; exist {
+		//log.Debugf("Messenger: Sending request to %s, ", target+deviceID, content)
+		ret := messenger.Request(content)
+		log.Debugf("Received Ret:%s", ret)
+		return ret
+	} else {
+		log.Warnf("Target:%s does not exist", target+deviceID)
+	}
+	return nil
+	//return m.messageReceivers[target+deviceID].Request(content)
 }

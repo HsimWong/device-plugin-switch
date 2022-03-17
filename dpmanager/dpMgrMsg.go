@@ -16,6 +16,7 @@ type DeviceRegisterRequest struct {
 	DeviceCategoryType string
 	DeviceBlockNum     int
 	AccessPoint        string
+	RegisterType       string // DeviceType, Group, Block
 }
 
 type DeviceRegisterResponse struct {

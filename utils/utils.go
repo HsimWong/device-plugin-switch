@@ -41,24 +41,6 @@ func Dial(unixSocketPath string, timeout time.Duration) (*grpc.ClientConn, error
 	return c, nil
 }
 
-//func StartRPC(object interface{}, protocol string, address string) {
-//	err := rpc.Register(object)
-//	Check(err, "Starting Register Failed")
-//	lis, err := net.Listen(protocol, address)
-//	Check(err, "rpc listening failed")
-//	log.Infof("RPC server starting success at %s", address)
-//	for {
-//		conn, err := lis.Accept()
-//		Check(err, "Error occurs when accepting connections")
-//		log.Infof("Received connection from %s", conn.RemoteAddr())
-//		//go processFunc.(func(net.Conn))(conn)
-//		go func(conn net.Conn) {
-//			log.Debugf("Processing info from %s...%s", conn.LocalAddr(), conn.RemoteAddr())
-//			jsonrpc.ServeConn(conn)
-//		}(conn)
-//	}
-//}
-
 func StartJsonSvr(protocol string, address string, processFunc interface{}) {
 	log.Debugf("Trying to start jsonsvr")
 	lis, err := net.Listen(protocol, address)
