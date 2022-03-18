@@ -2,9 +2,11 @@ package dpmanager
 
 import "sync"
 
+type MessageContent interface{}
+
 type MessagePackage struct {
-	Type string                `json:"Type"`
-	Info DeviceRegisterRequest `json:"Info"`
+	Type string         `json:"Type"`
+	Info MessageContent `json:"Info"`
 }
 
 type DeviceStatus struct {

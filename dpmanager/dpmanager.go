@@ -35,9 +35,13 @@ func (d *DpManager) registerNewDeviceCate(RegisReq DeviceRegisterRequest,
 		//log.Debugf("uuid:%s", deviceCateID)
 		deviceMsg := utils.NewSyncMessenger()
 		d.msgRouter.NewClient("device", deviceCateID, deviceMsg)
+
+		deviceMonitorMsg := utils.NewSyncMessenger()
+		d.msgRouter.NewClient("device.Monitor", deviceCateID, deviceMonitorMsg)
+		log.Debugf("%s has been added", "Monitor:"+deviceCateID)
 		//d.msgRouter.NewClient("device"+deviceCateID, deviceMsg)
 		d.deviceManagers[deviceCateID] =
-			deviceinstance.NewDevice(deviceCateID, deviceMsg)
+			deviceinstance.NewDevice(deviceCateID, deviceMsg, deviceMonitorMsg)
 		//log.Debugf("Router established, start adding new group")
 		ret += d.deviceManagers[deviceCateID].AddGroup(RegisReq.AccessPoint,
 			RegisReq.DeviceBlockNum)
@@ -84,7 +88,8 @@ func (d *DpManager) Register(RegisReq DeviceRegisterRequest) string {
 
 	deviceCateID := fmt.Sprintf("%x",
 		md5.Sum([]byte(RegisReq.DeviceCategoryType)))
-	//log.Debugf("deviceCate: %s", deviceCateID)
+
+	log.Warnf("deviceCate: %s, %s", RegisReq.DeviceCategoryType, deviceCateID)
 	retMsg := ""
 	if _, exist := d.devicePlugins[deviceCateID]; !exist {
 		//log.Debugf("Registering New Device")
@@ -93,31 +98,34 @@ func (d *DpManager) Register(RegisReq DeviceRegisterRequest) string {
 		retMsg = d.regisExistDeviceCate(RegisReq, deviceCateID)
 	}
 	if len(retMsg) == 0 {
-		retMsg = fmt.Sprintf("Success,%s", deviceCateID)
+		retMsg = "Success"
 	}
 	return retMsg
 }
 
 func (d *DpManager) ProcessRequest(conn *net.Conn) {
-	//log.Debugf("Process Request StartWorking...")
-	//content, err := ioutil.ReadAll(*conn)
-	//
-	//content, err := bufio.NewReader(*conn).ReadString('`')
-
 	decoder := json.NewDecoder(*conn)
-
 	var message MessagePackage
-
 	err := decoder.Decode(&message)
-
 	utils.Check(err, "Unmarshalling failed")
+	messageInfo := message.Info.(map[string]interface{})
 
 	//log.Debugf(message.Type)
 	switch message.Type {
 	case "Register":
 		go func() {
+			//log.Infof("RegisterType: %s",
+			//	message.Info.(map[string]interface{})["DeviceBlockNum"])
+
+			log.Infof("%d", int(messageInfo["DeviceBlockNum"].(float64)))
 			log.Info("Start registering")
-			regResult := d.Register(message.Info)
+			regResult := d.Register(DeviceRegisterRequest{
+				DeviceCategoryType: messageInfo["DeviceCategoryType"].(string),
+				DeviceBlockNum:     int(messageInfo["DeviceBlockNum"].(float64)),
+				AccessPoint:        messageInfo["AccessPoint"].(string),
+				RegisterType:       messageInfo["RegisterType"].(string),
+			})
+			//regResult := d.Register(message.Info.(DeviceRegisterRequest))
 			log.Infof("RegisterResult:%s", regResult)
 
 			_, err := (*conn).Write([]byte(regResult))
@@ -126,13 +134,35 @@ func (d *DpManager) ProcessRequest(conn *net.Conn) {
 
 		}()
 		break
+	case "Report":
+		go func() {
+			log.Infof("%s", messageInfo["DeviceType"].(string))
+			deviceCateID := fmt.Sprintf("%x",
+				md5.Sum([]byte(messageInfo["DeviceType"].(string))))
+			router := utils.GetMessageRouter()
+			retMsg := ""
+			if !router.QueryClientExistence("device.Monitor", deviceCateID) {
+				log.Infof("DeviceCateID: %s", deviceCateID)
+				retMsg += "DeviceCategoryNonExist;"
+			} else {
+				log.Infof("Client Found, start reporting")
+				retMsg += router.Call("device.Monitor", deviceCateID,
+					messageInfo).(string)
+			}
+			if len(retMsg) == 0 {
+				retMsg = "Success"
+			}
+			log.Debugf("ReportResult: %s", retMsg)
+			_, err := (*conn).Write([]byte(retMsg))
+			utils.Check(err, "Returning report Message Failed")
+			log.Debugf("Reporting finished: %s", retMsg)
+		}()
 	default:
 		log.Warning("Register type not exist")
 	}
 }
 
 func (d *DpManager) Run() {
-	//log.Debugf("DPmanager start running")
 	go utils.StartJsonSvr("tcp4",
 		"0.0.0.0"+utils.DpManagerPort, d.ProcessRequest)
 }

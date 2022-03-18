@@ -94,19 +94,7 @@ func (d *Instance) ListAndWatch(empty *plugin.Empty,
 	server plugin.DevicePlugin_ListAndWatchServer) error {
 	// This function runs in separate thread
 	log.Info("ListAndWatch called by kubelet")
-	// Initial Reporting to kubelet
-	//router := utils.GetMessageRouter()
-	//log.Debugf("Trying to get all devices first")
-	//allDevices := router.Call("device",
-	//	d.deviceCategoryID, "getAllDevices").([]*plugin.Device)
-	//log.Debugf("Received device info for the 1st time.....:%s", allDevices)
-	//log.Debugf("Trying to send list&Watch response")
-	//err := server.Send(&plugin.ListAndWatchResponse{
-	//	Devices: allDevices,
-	//})
-	//
-	//utils.Check(err, "Reporting List&Watch failed")
-	//log.Debugf("Reporting list and watch success")
+
 	// drop in loop, reporting to kubelet continuously
 	for {
 		deviceDeltas := d.msgRcv.Serve().([]*plugin.Device)

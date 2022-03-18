@@ -24,17 +24,20 @@ type DeviceCategory struct {
 	DeviceParts       map[string]*plugin.Device
 	DeviceControllers map[string]*deviceController //map[accessPoint-md5]*deviceController
 	deviceMsgSrv      *utils.SyncMessenger
+	deviceMonitorMsg  *utils.SyncMessenger
 	deviceUpdateChan  chan bool
 }
 
 func NewDevice(deviceCategoryID string,
-	deviceMsgSrv *utils.SyncMessenger) *DeviceCategory {
+	deviceMsgSrv *utils.SyncMessenger,
+	deviceMonitorMsg *utils.SyncMessenger) *DeviceCategory {
 	return &DeviceCategory{
 		deviceCategoryID:  deviceCategoryID,
 		DevicePartsAmount: 0,
 		DeviceParts:       make(map[string]*plugin.Device),
 		DeviceControllers: make(map[string]*deviceController),
 		deviceMsgSrv:      deviceMsgSrv,
+		deviceMonitorMsg:  deviceMonitorMsg,
 		deviceUpdateChan:  make(chan bool, 0xa),
 	}
 }
@@ -42,6 +45,7 @@ func NewDevice(deviceCategoryID string,
 func (d *DeviceCategory) Run() {
 	//log.Debugf("Device start running")
 	go d.deviceStatusResponder()
+	// Monitor starts after signal sent by device plugin
 }
 
 func (d *DeviceCategory) AddGroup(accessPoint string, deviceAmount int) string {
@@ -155,6 +159,7 @@ func (d *DeviceCategory) AllocateDevice() {
 
 func (d *DeviceCategory) monitor() {
 	log.Debugf("Monitor Invoked")
+	// Report to device plugin when detected changes from d.deviceUpdateChan
 	go func() {
 		router := utils.GetMessageRouter()
 		time.Sleep(10 * time.Second)
@@ -169,14 +174,42 @@ func (d *DeviceCategory) monitor() {
 			log.Debugf("call devicePlugin to update finished, received respond: %s", respond)
 		}
 	}()
+	// Push to d.deviceUpdateChan when received package update from physical device
 	for {
-		//log.Debugf("Current block num total:%d", len(d.DeviceParts))
-		time.Sleep(10 * time.Second)
+		ret := ""
 
-		for _, group := range d.DeviceControllers {
-			log.Debugf("Group: %s, groupblocks: %d", group.accessPoint, len(group.partsMap))
+		// Block receive updates
+		reportInfo := d.deviceMonitorMsg.Serve().(map[string]interface{})
+
+		errFlag := false
+
+		if _, exist := reportInfo["BlockStatuses"]; !exist {
+			errFlag = true
+			ret += "KeyBlockStatusesNotExist;"
+			d.deviceMonitorMsg.Respond(ret)
+		} else if _, exist = reportInfo["AccessPoint"]; !exist {
+			errFlag = true
+			ret += "KeyAccessPointNotExist;"
+			d.deviceMonitorMsg.Respond(ret)
+		}
+
+		if errFlag {
+			break
+		}
+
+		statusesRaw := reportInfo["BlockStatuses"]
+		for index, statusRaw := range statusesRaw.([]interface{}) {
+			status := utils.TripleOp(int(statusRaw.(interface{}).(float64)) == 1,
+				plugin.Healthy, plugin.Unhealthy).(string)
+			//log.Debugf("%s", reportInfo["AccessPoint"])
+			controllerIndex := fmt.Sprintf("%x",
+				md5.Sum([]byte(reportInfo["AccessPoint"].(interface{}).(string))))
+			//print(status)
+			targetDevice := d.DeviceParts[d.DeviceControllers[controllerIndex].partsMap[index]]
+			targetDevice.ID = status
 		}
 		d.deviceUpdateChan <- true
+		d.deviceMonitorMsg.Respond(ret)
 
 	}
 

@@ -56,6 +56,11 @@ func (m *MessageRouter) NewClient(target string, deviceID string,
 	m.messageReceivers[target+deviceID] = msgSvr
 }
 
+func (m *MessageRouter) QueryClientExistence(target string, deviceID string) bool {
+	_, exist := m.messageReceivers[target+deviceID]
+	return exist
+}
+
 func (m *MessageRouter) Call(target string, deviceID string,
 	content interface{}) interface{} {
 	//log.Debugf("calling Target: %s, cateID:%s", target, deviceID)
