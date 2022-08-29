@@ -19,6 +19,8 @@ type DeviceRegisterRequest struct {
 	DeviceBlockNum     int
 	AccessPoint        string
 	RegisterType       string // DeviceType, Group, Block
+	Mounts             map[string]string
+	Envs               map[string]string
 }
 
 type DeviceRegisterResponse struct {

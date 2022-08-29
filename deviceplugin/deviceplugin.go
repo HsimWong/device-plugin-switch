@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path"
+	"strings"
 	"time"
 )
 
@@ -21,10 +22,13 @@ type Instance struct {
 	cancel           context.CancelFunc
 	msgRcv           *utils.SyncMessenger
 	devSocket        string
+	mounts           map[string]string
+	envs             map[string]string
 }
 
 func NewDevicePluginInstance(deviceType string, deviceCategoryID string,
-	msgRcv *utils.SyncMessenger) *Instance {
+	msgRcv *utils.SyncMessenger, mounts map[string]string,
+	envs map[string]string) *Instance {
 	return &Instance{
 		deviceType:       deviceType,
 		deviceCategoryID: deviceCategoryID,
@@ -34,6 +38,8 @@ func NewDevicePluginInstance(deviceType string, deviceCategoryID string,
 		cancel:           nil,
 		msgRcv:           msgRcv,
 		devSocket:        path.Join(utils.DevicePluginDir, deviceType+".sock"),
+		mounts:           mounts,
+		envs:             envs,
 	}
 }
 
@@ -116,12 +122,42 @@ func (d *Instance) GetPreferredAllocation(ctx context.Context, request *plugin.P
 }
 
 func (d *Instance) Allocate(ctx context.Context, request *plugin.AllocateRequest) (*plugin.AllocateResponse, error) {
-	//TODO implement me
-	panic("implement me")
+	// Should call device.Allocate to get responding devices
+	// in the future to enable 1-machine-2-devices circumstances
+	// For now, we just respond what request requires.
+	log.Println("Allocate called")
+	resps := &plugin.AllocateResponse{}
+	for _, req := range request.ContainerRequests {
+		log.Printf("received request: %s\n", strings.Join(req.DevicesIDs, ","))
+		for i, deviceId := range req.DevicesIDs {
+			if deviceId == "\x00" {
+				log.Warnf("Received a request asking for \"\\x00\"")
+				req.DevicesIDs[i] = "夫"
+			}
+		}
+
+		resp := plugin.ContainerAllocateResponse{}
+		resp.Envs[d.deviceType] = strings.Join(req.DevicesIDs, ",")
+		for envKey, envValue := range d.envs {
+			resp.Envs[envKey] = envValue
+		}
+
+		for mountKey, mountValue := range d.mounts {
+			resp.Mounts = append(resp.Mounts, &plugin.Mount{
+				ContainerPath: mountKey,
+				HostPath:      mountValue,
+				ReadOnly:      false,
+			})
+		}
+
+		resps.ContainerResponses = append(resps.ContainerResponses, &resp)
+	}
+	return resps, nil
 }
 
 func (d *Instance) PreStartContainer(ctx context.Context, request *plugin.PreStartContainerRequest) (*plugin.PreStartContainerResponse, error) {
 	log.Println("PreStartContainer called")
+
 	return &plugin.PreStartContainerResponse{}, nil
 	//panic("implement me")
 }

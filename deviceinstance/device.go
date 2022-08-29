@@ -13,7 +13,8 @@ import (
 type deviceController struct {
 	partsMap       map[int]string //map[partGroupIndex]partTotalIndex
 	accessPoint    string
-	BrokenPartsNum int // index starts from 0
+	partsStatus    map[int]string //map[sequence]status
+	BrokenPartsNum int            // index starts from 0
 	UsedPartsNum   int
 	FreePartsNum   int
 }
@@ -53,24 +54,33 @@ func (d *DeviceCategory) AddGroup(accessPoint string, deviceAmount int) string {
 	if _, exist := d.DeviceControllers[controllerIndex]; exist {
 		return fmt.Sprintf("Re-registerExistedGroup:%s;", accessPoint)
 	}
-	//log.Debugf("Working on AddGroup")
+	log.Debugf("Working on AddGroup")
 	d.DeviceControllers[controllerIndex] = &deviceController{
-		partsMap:       make(map[int]string),
+		partsMap:       make(map[int]string, deviceAmount),
 		accessPoint:    accessPoint,
+		partsStatus:    make(map[int]string),
 		BrokenPartsNum: deviceAmount,
 		UsedPartsNum:   0,
 		FreePartsNum:   0,
 	}
+
+	//d.DeviceControllers[controllerIndex].partsStatus[0] = "Broken"
+
+	log.Debugf("Start looping")
 	//newDeviceParts := make([]*plugin.Device, deviceAmount)
 	//d.DeviceParts = append(d.DeviceParts, newDeviceParts...)
 	for i := 0; i < deviceAmount; i++ {
+		log.Debugf("logging %dth device", i)
 		deviceBlockID := uuid.NewString()
 		d.DeviceParts[deviceBlockID] = &plugin.Device{
 			ID:     deviceBlockID,
 			Health: plugin.Unhealthy,
 		}
 		d.DeviceControllers[controllerIndex].partsMap[i] = deviceBlockID
+		d.DeviceControllers[controllerIndex].BrokenPartsNum++
+		d.DeviceControllers[controllerIndex].partsStatus[i] = "Broken"
 	}
+
 	d.DevicePartsAmount += deviceAmount
 	//log.Debugf("Sending signal working")
 	d.deviceUpdateChan <- true
@@ -93,6 +103,8 @@ func (d *DeviceCategory) AddBlock(accessPoint string, deviceAmount int) string {
 			Health: plugin.Unhealthy,
 		}
 		d.DeviceControllers[controllerIndex].partsMap[i+existedPartsNum] = deviceBlockID
+		d.DeviceControllers[controllerIndex].partsStatus[i+existedPartsNum] = "Broken"
+		d.DeviceControllers[controllerIndex].BrokenPartsNum++
 	}
 	d.DevicePartsAmount += deviceAmount
 	d.deviceUpdateChan <- true
@@ -176,11 +188,11 @@ func (d *DeviceCategory) monitor() {
 	}()
 	// Push to d.deviceUpdateChan when received package update from physical device
 	for {
-		ret := ""
 
 		// Block receive updates
 		reportInfo := d.deviceMonitorMsg.Serve().(map[string]interface{})
 
+		ret := ""
 		errFlag := false
 
 		if _, exist := reportInfo["BlockStatuses"]; !exist {
@@ -199,14 +211,23 @@ func (d *DeviceCategory) monitor() {
 
 		statusesRaw := reportInfo["BlockStatuses"]
 		for index, statusRaw := range statusesRaw.([]interface{}) {
-			status := utils.TripleOp(int(statusRaw.(interface{}).(float64)) == 1,
+			pluginStatus := utils.TripleOp(int(statusRaw.(interface{}).(float64)) == 1,
 				plugin.Healthy, plugin.Unhealthy).(string)
 			//log.Debugf("%s", reportInfo["AccessPoint"])
 			controllerIndex := fmt.Sprintf("%x",
 				md5.Sum([]byte(reportInfo["AccessPoint"].(interface{}).(string))))
 			//print(status)
 			targetDevice := d.DeviceParts[d.DeviceControllers[controllerIndex].partsMap[index]]
-			targetDevice.ID = status
+			//switch targetDevice.Health {
+			//case plugin.Healthy:
+			//
+			//	break
+			//case plugin.Unhealthy:
+			//	break
+			//}
+
+			targetDevice.Health = pluginStatus
+
 		}
 		d.deviceUpdateChan <- true
 		d.deviceMonitorMsg.Respond(ret)
